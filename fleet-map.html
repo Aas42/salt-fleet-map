@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Salt Ship – Fleet Map</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #020617; /* slate-950 */
+        color: #e5e7eb;
+      }
+
+      #app {
+        display: flex;
+        height: 100%;
+      }
+
+      /* Sidebar */
+      #sidebar {
+        width: 360px;
+        max-width: 40%;
+        border-right: 1px solid #1f2937;
+        padding: 12px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: radial-gradient(circle at top, #111827 0, #020617 55%);
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+      }
+
+      #titleRow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      #sidebar h1 {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9ca3af;
+      }
+
+      #tag {
+        font-size: 0.75rem;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.1);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.7);
+        white-space: nowrap;
+      }
+
+      #searchInput {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid #374151;
+        font-size: 0.85rem;
+        outline: none;
+        background: #020617;
+        color: #e5e7eb;
+      }
+
+      #searchInput::placeholder {
+        color: #6b7280;
+      }
+
+      #searchInput:focus {
+        border-color: #38bdf8;
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.8);
+      }
+
+      #vesselList {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        overflow-y: auto;
+        flex: 1;
+      }
+
+      .vessel-item {
+        padding: 8px 8px;
+        border-radius: 10px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        border: 1px solid transparent;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        background: transparent;
+        transition: background 0.12s ease, border-color 0.12s ease,
+          transform 0.05s ease;
+      }
+
+      .vessel-item:hover {
+        background: rgba(15, 23, 42, 0.9);
+        border-color: #1f2937;
+        transform: translateY(-1px);
+      }
+
+      .vessel-item.active {
+        background: rgba(8, 47, 73, 0.9);
+        border-color: #38bdf8;
+      }
+
+      .vessel-name {
+        font-weight: 600;
+        color: #f9fafb;
+      }
+
+      .vessel-meta {
+        font-size: 0.75rem;
+        color: #9ca3af;
+      }
+
+      /* Card layout with thumbnail */
+      .vessel-card {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
+      .vessel-thumb {
+        width: 52px;
+        height: 40px;
+        border-radius: 8px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: #020617;
+        border: 1px solid #111827;
+      }
+
+      .vessel-thumb-placeholder {
+        width: 52px;
+        height: 40px;
+        border-radius: 8px;
+        border: 1px dashed #1f2937;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        color: #6b7280;
+      }
+
+      .vessel-text {
+        flex: 1;
+        min-width: 0;
+      }
+
+      #map {
+        flex: 1;
+      }
+
+      .leaflet-container {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Dark theme tweaks for Leaflet controls */
+      .leaflet-control-zoom a {
+        background: rgba(15, 23, 42, 0.9);
+        color: #e5e7eb;
+        border-color: #111827;
+      }
+
+      .leaflet-control-zoom a:hover {
+        background: rgba(30, 64, 175, 0.9);
+      }
+
+      .leaflet-popup-content-wrapper,
+      .leaflet-popup-tip {
+        background: #020617;
+        color: #e5e7eb;
+        border-radius: 10px;
+      }
+
+      .leaflet-popup-content {
+        font-size: 0.85rem;
+      }
+
+      a.popup-link {
+        color: #38bdf8;
+        text-decoration: none;
+      }
+
+      a.popup-link:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="sidebar">
+        <div id="titleRow">
+          <h1>Salt Designs</h1>
+          <span id="tag">Fleet Map</span>
+        </div>
+
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Search by name, client, type or segment..."
+        />
+
+        <ul id="vesselList"></ul>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <script>
+      // -----------------------------------------------------------
+      // 1) VESSEL DATA
+      // -----------------------------------------------------------
+      // lat/lng are rough and can be refined.
+      // imageUrl are hero images from the reference pages where available.
+      const vessels = [
+        {
+          id: "napier-sb-700t",
+          name: "Napier S&B 700t",
+          type: "SALT S&B 700t",
+          segment: "Aquaculture",
+          client: "Napier",
+          shipyard: "Freire Shipyard",
+          deliveredYear: 2027,
+          status: "Under Construction",
+          // Example: Vigo area (Freire)
+          lat: 42.24,
+          lng: -8.72,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/b377e365-004d-4e8a-8c5a-9b717871ae25/0580_01.jpg",
+          detailUrl:
+            "https://www.saltship.com/references-collection/napier-sandb-700t"
+        },
+        {
+          id: "trident-lfc-4000",
+          name: "Trident LFC 4000 m3",
+          type: "SALT Live Fish Carrier",
+          segment: "Aquaculture",
+          client: "Trident Aqua Services",
+          shipyard: "Zamakona",
+          deliveredYear: 2027,
+          status: "Under Construction",
+          lat: null,
+          lng: null,
+          imageUrl: null,
+          detailUrl:
+            "https://www.saltship.com/references-collection/trident-aqua-services-lfc-4000-m3"
+        },
+        {
+          id: "froy-lfc-4500",
+          name: "Frøy Live Fish Carrier 4500 m3",
+          type: "SALT Live Fish Carrier",
+          segment: "Aquaculture",
+          client: "Frøy",
+          shipyard: "Astilleros de Murueta",
+          deliveredYear: 2027,
+          status: "Under Construction",
+          lat: null,
+          lng: null,
+          imageUrl: null,
+          detailUrl:
+            "https://www.saltship.com/references-collection/fry-live-fish-carrier-4500-m3"
+        },
+        {
+          id: "inter-scotia",
+          name: "Inter Scotia",
+          type: "SALT Live Fish Carrier",
+          segment: "Aquaculture",
+          client: "Intership",
+          shipyard: "Zamakona",
+          deliveredYear: 2023,
+          status: "Delivered",
+          lat: null,
+          lng: null,
+          imageUrl: null,
+          detailUrl:
+            "https://www.saltship.com/references-collection/inter-scotia"
+        },
+        {
+          id: "seigrunn",
+          name: "Seigrunn",
+          type: "SALT Well Boat",
+          segment: "Aquaculture",
+          client: "Seistar Holding AS",
+          shipyard: "Cemre Shipyard",
+          deliveredYear: 2023,
+          status: "Delivered",
+          // Cemre (Yalova area, Turkey) – rough
+          lat: 40.69,
+          lng: 29.39,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/1621580239757-S4N7CWZE1U8LF2U0YHWY/0335_Render24.jpg",
+          detailUrl: "https://www.saltship.com/references-collection/seigrunn"
+        },
+        {
+          id: "sunbeam",
+          name: "Sunbeam",
+          type: "SALT Pelagic Trawler",
+          segment: "Fishing",
+          client: "Sunbeam Fishing Ltd.",
+          shipyard: "Myklebust Verft, Norway",
+          deliveredYear: 2025,
+          status: "Under Construction",
+          // Myklebust Verft – rough
+          lat: 62.18,
+          lng: 5.57,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/6635c4f2-12f8-4854-86a8-a2d553139275/0364_Render_13.jpg",
+          detailUrl: "https://www.saltship.com/references-collection/sunbeam"
+        },
+        {
+          id: "quantus",
+          name: "Quantus",
+          type: "SALT Pelagic Trawler",
+          segment: "Fishing",
+          client: "Quantus",
+          shipyard: "Westcon Shipyard, Norway",
+          deliveredYear: 2025,
+          status: "Under Construction",
+          // Westcon Ølensvåg – rough
+          lat: 59.61,
+          lng: 5.78,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/6349ee18-2497-44ff-9c62-306695a939bd/0499_Render_23.jpg",
+          detailUrl: "https://www.saltship.com/references-collection/quantus"
+        },
+        {
+          id: "tronderbas",
+          name: "Trønderbas",
+          type: "SALT Purse Seiner / Trawler",
+          segment: "Fishing",
+          client: "Ivan Ulsund Rederi AS",
+          shipyard: "Westcon Shipyard, Norway",
+          deliveredYear: 2024,
+          status: "Delivered",
+          lat: 59.61,
+          lng: 5.78,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/e3205249-d02a-45a6-ab9d-a727b536b9b6/0244_Render_09.jpg",
+          detailUrl:
+            "https://www.saltship.com/references-collection/trnderbas"
+        },
+        {
+          id: "liafjord",
+          name: "Liafjord",
+          type: "SALT Purse Seiner / Trawler",
+          segment: "Fishing",
+          client: "Liegruppen",
+          shipyard: "Cemre Marin Endustri A.S, Turkey",
+          deliveredYear: 2023,
+          status: "Delivered",
+          lat: 40.69,
+          lng: 29.39,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/f9ac4abc-97bf-47cb-a6a9-c7d99ef66b2c/0332_Render_35.jpg",
+          detailUrl: "https://www.saltship.com/references-collection/liafjord"
+        },
+        {
+          id: "salt-310-ocv-deme",
+          name: "SALT 310 OCV",
+          type: "SALT 310 OCV",
+          segment: "Subsea & Construction",
+          client: "DEME Group",
+          shipyard: "Pax Ocean",
+          deliveredYear: 2027,
+          status: "Under Construction",
+          lat: null,
+          lng: null,
+          imageUrl: null,
+          detailUrl: "https://www.saltship.com/references-collection/salt-ocv-3"
+        },
+        {
+          id: "salt-mpsv-8",
+          name: "SALT MPSV #8",
+          type: "SALT MPSV",
+          segment: "Platform Supply",
+          client: "Gardenia",
+          shipyard: "Pax Ocean",
+          deliveredYear: 2026,
+          status: "Under Construction",
+          lat: null,
+          lng: null,
+          imageUrl: null,
+          detailUrl:
+            "https://www.saltship.com/references-collection/salt-mpsv-8"
+        },
+        {
+          id: "usv-ocean-challenger",
+          name: "USV Ocean Challenger",
+          type: "SALT USV",
+          segment: "Subsea & Construction",
+          client: "USV AS (DeepOcean / Solstad / Østensjø)",
+          shipyard: "Gondan, Spain",
+          deliveredYear: 2024,
+          status: "Delivered",
+          // Gondan – rough (Castropol area)
+          lat: 43.53,
+          lng: -7.03,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/1694159024623-TBB3IGVVLMH1ARBIQUVW/64c8adfa3a01b8aa1086ddd0_auton_06_2560x1708-p-1600.jpg",
+          detailUrl: "https://www.saltship.com/references-collection/saltusv"
+        },
+        {
+          id: "maersk-maker",
+          name: "Maersk Maker",
+          type: "SALT 200 AHTS",
+          segment: "Anchor Handling",
+          client: "Maersk Supply Service",
+          shipyard: "Kleven",
+          deliveredYear: 2018,
+          status: "Delivered",
+          // Kleven / Ulsteinvik – rough
+          lat: 62.34,
+          lng: 5.85,
+          imageUrl:
+            "https://images.squarespace-cdn.com/content/v1/60a759a502207048ad60f11b/1621580239441-IHANI4D5FL8N8EMIRVTU/image-asset.jpeg",
+          detailUrl:
+            "https://www.saltship.com/references-collection/maersk-maker"
+        }
+      ];
+
+      // -----------------------------------------------------------
+      // 2) MAP INITIALIZATION (dark UI + colored OSM tiles)
+      // -----------------------------------------------------------
+      const map = L.map("map", {
+        zoomControl: true
+      }).setView([60, 5.5], 5); // Roughly over Norway
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      const vesselIcon = L.icon({
+        iconUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        shadowSize: [41, 41]
+      });
+
+      // -----------------------------------------------------------
+      // 3) MARKERS + POPUPS
+      // -----------------------------------------------------------
+      const markersById = new Map();
+
+      vessels.forEach((vessel) => {
+        if (vessel.lat == null || vessel.lng == null) {
+          // No coordinates yet: nothing on map but still in sidebar search
+          return;
+        }
+
+        const marker = L.marker([vessel.lat, vessel.lng], {
+          icon: vesselIcon
+        }).addTo(map);
+
+        const popupHtml = `
+          <div style="max-width: 260px;">
+            ${
+              vessel.imageUrl
+                ? `<div style="margin-bottom:6px;">
+                     <img src="${vessel.imageUrl}"
+                          alt="${vessel.name}"
+                          style="width:100%;border-radius:8px;display:block;" />
+                   </div>`
+                : ""
+            }
+            <strong>${vessel.name}</strong><br>
+            ${vessel.type ? `<em>${vessel.type}</em><br>` : ""}
+            ${vessel.segment ? `${vessel.segment}<br>` : ""}
+            ${vessel.client ? `Owner: ${vessel.client}<br>` : ""}
+            ${vessel.shipyard ? `Shipyard: ${vessel.shipyard}<br>` : ""}
+            ${
+              vessel.deliveredYear
+                ? `Delivery: ${vessel.deliveredYear}<br>`
+                : ""
+            }
+            ${
+              vessel.status
+                ? `<small>Status: ${vessel.status}</small><br>`
+                : ""
+            }
+            ${
+              vessel.detailUrl
+                ? `<a class="popup-link" href="${vessel.detailUrl}" target="_blank" rel="noopener noreferrer">
+                     View on saltship.com
+                   </a>`
+                : ""
+            }
+          </div>
+        `;
+
+        marker.bindPopup(popupHtml);
+        markersById.set(vessel.id, marker);
+      });
+
+      // -----------------------------------------------------------
+      // 4) SIDEBAR: LIST + SEARCH + HIGHLIGHT
+      // -----------------------------------------------------------
+      const listEl = document.getElementById("vesselList");
+      const searchInput = document.getElementById("searchInput");
+
+      function renderList(filterText = "") {
+        listEl.innerHTML = "";
+
+        const normalized = filterText.toLowerCase().trim();
+
+        const filtered = vessels.filter((v) => {
+          if (!normalized) return true;
+          return (
+            v.name.toLowerCase().includes(normalized) ||
+            (v.client && v.client.toLowerCase().includes(normalized)) ||
+            (v.type && v.type.toLowerCase().includes(normalized)) ||
+            (v.segment && v.segment.toLowerCase().includes(normalized))
+          );
+        });
+
+        filtered.forEach((vessel) => {
+          const li = document.createElement("li");
+          li.className = "vessel-item";
+          li.dataset.id = vessel.id;
+
+          const thumbHtml = vessel.imageUrl
+            ? `<img class="vessel-thumb" src="${vessel.imageUrl}" alt="${vessel.name} thumbnail" />`
+            : `<div class="vessel-thumb-placeholder">img</div>`;
+
+          li.innerHTML = `
+            <div class="vessel-card">
+              ${thumbHtml}
+              <div class="vessel-text">
+                <span class="vessel-name">${vessel.name}</span>
+                <span class="vessel-meta">
+                  ${vessel.client ?? "Unknown owner"}
+                  &middot; ${vessel.segment ?? "Segment"}
+                  ${
+                    vessel.deliveredYear
+                      ? " &middot; " + vessel.deliveredYear
+                      : ""
+                  }
+                </span>
+              </div>
+            </div>
+          `;
+
+          li.addEventListener("click", () => focusVessel(vessel.id));
+          listEl.appendChild(li);
+        });
+      }
+
+      function setActiveListItem(id) {
+        const items = listEl.querySelectorAll(".vessel-item");
+        items.forEach((item) => {
+          if (item.dataset.id === id) {
+            item.classList.add("active");
+            item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          } else {
+            item.classList.remove("active");
+          }
+        });
+      }
+
+      function focusVessel(id) {
+        const vessel = vessels.find((v) => v.id === id);
+        const marker = markersById.get(id);
+
+        // Always highlight in list
+        setActiveListItem(id);
+
+        if (!vessel || !marker) {
+          return;
+        }
+
+        map.flyTo([vessel.lat, vessel.lng], 7, {
+          animate: true,
+          duration: 0.7
+        });
+
+        marker.openPopup();
+      }
+
+      searchInput.addEventListener("input", (e) => {
+        renderList(e.target.value);
+      });
+
+      // Initial render
+      renderList();
+    </script>
+  </body>
+</html>
